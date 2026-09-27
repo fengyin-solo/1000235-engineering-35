@@ -1,4 +1,8 @@
-"""能效分析接口：维护能效报告，覆盖生成报告、审阅确认、归档报告等动作。"""
+"""能效分析接口：维护能效报告，覆盖生成报告、审阅确认、归档报告等动作。
+
+报告内容不再手工填写：分析周期、系统效率、损失构成由能效流水线从基准数据算出，
+流水线可重复执行，重跑时旧结果先隔离再替换。
+"""
 from __future__ import annotations
 
 from typing import Any
@@ -6,6 +10,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 
 from app.schemas import ActionResult, EntryPayload, PageResult
+from app.services.energy_pipeline import archived_reports, pipeline_runs, run_pipeline
 from app.services.energy_saving import EnergySavingService
 
 router = APIRouter(prefix="/api/energy_saving", tags=["能效分析"])
@@ -14,6 +19,31 @@ service = EnergySavingService()
 
 LIST_FIELDS = ["报告编号", "电站编号", "分析周期", "理论发电量", "实际发电量", "系统效率", "损失分析", "报告状态"]
 STATUSES = ["待生成", "已生成", "已审阅", "已归档"]
+
+
+@router.post("/pipeline/run", response_model=ActionResult)
+def rerun_pipeline() -> ActionResult:
+    """重跑能效流水线：从基准数据重算全部报告，旧结果先隔离再替换，返回本次运行摘要。"""
+    run = run_pipeline(trigger="manual")
+    message = f"流水线 {run['run_id']} 执行成功：隔离旧结果 {run['isolated']} 条，发布新报告 {run['published']} 条"
+    return ActionResult(ok=True, message=message, entry=run)
+
+
+@router.get("/pipeline/runs")
+def list_pipeline_runs() -> dict[str, Any]:
+    """流水线运行记录：每次重跑的时间、触发方式、隔离与发布数量。"""
+    runs = pipeline_runs()
+    return {"total": len(runs), "items": runs}
+
+
+@router.get("/archive", response_model=PageResult[dict])
+def list_archived(page: int = 1, size: int = 20) -> PageResult[dict]:
+    """被隔离的历史报告：重跑前的旧结果集中在这里备查，不再参与正式列表。"""
+    if size > 200:
+        raise HTTPException(status_code=400, detail="每页最多 200 条，请缩小分页范围")
+    rows = archived_reports()
+    start = max(page - 1, 0) * size
+    return PageResult(items=rows[start:start + size], total=len(rows), page=page, size=size)
 
 
 @router.get("", response_model=PageResult[dict])

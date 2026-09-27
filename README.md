@@ -74,3 +74,20 @@ npm run dev
   `backend/app/routers/<模块>.py`，业务规则在 `backend/app/services/<模块>.py`。
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
+
+## 能效报告流水线
+
+能效报告的分析周期、系统效率、损失构成不手工填写，统一由
+`backend/app/services/energy_pipeline.py` 从基准数据 `backend/app/baseline.py` 算出：
+
+- 流水线可重复执行：每次先在暂存区算好全部报告，再把当前发布的旧结果整体隔离进
+  归档表（`energy_saving_archive`，可经 `GET /api/energy_saving/archive` 备查），
+  最后用暂存结果整体替换发布表，隔离与替换在同一把锁里完成。
+- 触发方式：服务启动时自动跑一次；运行中可 `POST /api/energy_saving/pipeline/run`
+  重跑（前端「能效分析」页面有对应按钮），运行记录见 `GET /api/energy_saving/pipeline/runs`。
+
+## 启动约束
+
+后端启动前先过构建依赖检查：`run.sh` 会执行 `python -m app.preflight`，
+对照 `requirements.txt` 逐项检查，缺失时停止启动并列出缺失项；
+应用 lifespan 里还会再查一次，随后跑首次能效流水线，全部成功才开始接收请求。
