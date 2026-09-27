@@ -7,6 +7,7 @@
       </div>
       <div class="page-actions">
         <button class="btn primary" type="button" @click="openCreate">登记能效报告</button>
+        <button class="btn" type="button" @click="rerunPipeline">重算能效报告</button>
         <button class="btn" type="button" @click="exportRows">导出能效分析清单</button>
       </div>
     </header>
@@ -57,6 +58,7 @@
 
     <footer class="page-foot">
       <span>共 {{ total }} 条能效分析记录</span>
+      <span v-if="noticeMessage" class="ok-text">{{ noticeMessage }}</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
     </footer>
   </section>
@@ -78,6 +80,7 @@ const stats = [{"label": "待审阅报告", "value": 0}, {"label": "当月PR值"
 const rows = ref<Row[]>([])
 const total = ref(0)
 const errorMessage = ref('')
+const noticeMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
 
@@ -94,12 +97,31 @@ function openCreate() {
   errorMessage.value = '能效报告登记入口尚未接入审批流'
 }
 
+async function rerunPipeline() {
+  errorMessage.value = ''
+  noticeMessage.value = ''
+  try {
+    const response = await request(`${ENDPOINT}/pipeline/run`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    })
+    const payload = await response.json()
+    if (!payload.ok) {
+      throw new Error(payload.message || '能效流水线执行失败')
+    }
+    noticeMessage.value = payload.message
+    await reload()
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '能效流水线执行失败'
+  }
+}
+
 async function runAction(action: string, row: Row) {
   errorMessage.value = ''
   try {
     const response = await request(`${ENDPOINT}/${row.id}/actions`, {
       method: 'POST',
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ values: { action } }),
     })
     if (!response.ok) {
       throw new Error('能效分析动作未生效，请稍后重试')

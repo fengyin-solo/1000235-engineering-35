@@ -5,14 +5,30 @@
 """
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.routers import ROUTERS
+from app.services.energy_pipeline import pipeline
 from app.store import store
 
-app = FastAPI(title="光伏电站运维管理平台", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    # 启动即跑一轮能效流水线：基准数据缺失时抛错中止启动，
+    # 只有流水线成功，报告服务才开始对外提供
+    summary = pipeline.run()
+    print(
+        f"能效流水线就绪：{summary.batch} 分析周期 {summary.period}，"
+        f"发布报告 {summary.generated} 条，隔离旧结果 {summary.isolated} 条"
+    )
+    yield
+
+
+app = FastAPI(title="光伏电站运维管理平台", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

@@ -8,6 +8,9 @@ from typing import Any
 
 from app.seed import SEED_ROWS
 
+# 流水线内部表：基准数据与隔离归档不参与业务概览统计
+INTERNAL_MODULES = frozenset({"energy_baseline", "energy_saving_archive"})
+
 
 class Store:
     def __init__(self) -> None:
@@ -30,6 +33,8 @@ class Store:
     def overview(self) -> dict[str, object]:
         modules: list[dict[str, object]] = []
         for name in self.module_names():
+            if name in INTERNAL_MODULES:
+                continue
             rows = self.rows(name)
             modules.append({
                 "name": name,

@@ -3,6 +3,42 @@ from __future__ import annotations
 
 from typing import Any
 
+
+def _energy_baseline_rows() -> list[dict[str, Any]]:
+    """能效基准数据：3 座电站 2026-09-01 ~ 2026-09-07 的逐日发电与损失明细。
+
+    理论发电量 = 峰值日照时数 × 装机容量，实际发电量 = 理论值 − 各项损失，
+    保证效率与损失构成同源、可复核；能效流水线只读这份数据做推导。
+    """
+    plants = [("PLAN-0001", 1200.0), ("PLAN-0002", 800.0), ("PLAN-0003", 500.0)]
+    sunshine = [4.3, 3.9, 4.6, 4.1, 3.4, 4.5, 4.0]  # 逐日峰值日照时数
+    rows: list[dict[str, Any]] = []
+    row_id = 0
+    for plant_index, (plant, capacity) in enumerate(plants):
+        for day, hours in enumerate(sunshine, start=1):
+            row_id += 1
+            theoretical = hours * capacity
+            # 损失占比逐日、逐站略有波动，每站各安排一天停机检修
+            loss_shares = {
+                "组件损失kWh": 0.052 + 0.004 * (day % 2) + 0.003 * plant_index,
+                "逆变器损失kWh": 0.024 + 0.002 * plant_index,
+                "线路损失kWh": 0.018,
+                "灰尘遮挡kWh": 0.031 + 0.006 * ((day + 1) % 3) + 0.004 * plant_index,
+                "停机损失kWh": 0.06 if day == 2 + 2 * plant_index else 0.008,
+            }
+            losses = {name: round(theoretical * share, 1) for name, share in loss_shares.items()}
+            rows.append({
+                "id": row_id,
+                "电站编号": plant,
+                "记录日期": f"2026-09-{day:02d}",
+                "峰值日照时数": hours,
+                "装机容量kWp": capacity,
+                "实际发电量kWh": round(theoretical - sum(losses.values()), 1),
+                **losses,
+            })
+    return rows
+
+
 SEED_ROWS: dict[str, list[dict[str, Any]]] = {
     "plant": [{'id': 1,
   'status': '建设中',
@@ -580,42 +616,9 @@ SEED_ROWS: dict[str, list[dict[str, Any]]] = {
   '通讯状态': '汇流箱管理样例3',
   '上次检修日': '汇流箱管理样例3',
   '箱体状态': '汇流箱管理样例3'}],
-    "energy_saving": [{'id': 1,
-  'status': '待生成',
-  'pending': True,
-  'abnormal': False,
-  '报告编号': 'ENER-0001',
-  '电站编号': 'ENER-0001',
-  '分析周期': '能效分析样例1',
-  '理论发电量': '能效分析样例1',
-  '实际发电量': '能效分析样例1',
-  '系统效率': '能效分析样例1',
-  '损失分析': '能效分析样例1',
-  '报告状态': '能效分析样例1'},
- {'id': 2,
-  'status': '已生成',
-  'pending': True,
-  'abnormal': True,
-  '报告编号': 'ENER-0002',
-  '电站编号': 'ENER-0002',
-  '分析周期': '能效分析样例2',
-  '理论发电量': '能效分析样例2',
-  '实际发电量': '能效分析样例2',
-  '系统效率': '能效分析样例2',
-  '损失分析': '能效分析样例2',
-  '报告状态': '能效分析样例2'},
- {'id': 3,
-  'status': '已审阅',
-  'pending': False,
-  'abnormal': False,
-  '报告编号': 'ENER-0003',
-  '电站编号': 'ENER-0003',
-  '分析周期': '能效分析样例3',
-  '理论发电量': '能效分析样例3',
-  '实际发电量': '能效分析样例3',
-  '系统效率': '能效分析样例3',
-  '损失分析': '能效分析样例3',
-  '报告状态': '能效分析样例3'}],
+    "energy_baseline": _energy_baseline_rows(),
+    # 能效报告不由种子数据填充，启动时由能效流水线从基准数据生成
+    "energy_saving": [],
     "training": [{'id': 1,
   'status': '计划中',
   'pending': True,

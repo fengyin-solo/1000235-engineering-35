@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.energy_pipeline import BaselineError, pipeline
 from app.store import store
 
 MODULE = "energy_saving"
@@ -10,6 +11,7 @@ REQUIRED_FIELDS = ["报告编号", "电站编号", "分析周期"]
 STATUS_ORDER = ["待生成", "已生成", "已审阅", "已归档"]
 ACTION_RULES = {"生成报告": "已生成", "审阅确认": "已审阅", "归档报告": "已归档"}
 NEGATIVE_ACTIONS = []
+MANUAL_SOURCE = "手工登记"
 
 
 class EnergySavingService:
@@ -43,6 +45,7 @@ class EnergySavingService:
         entry["status"] = STATUS_ORDER[0]
         entry["pending"] = True
         entry["abnormal"] = False
+        entry["数据来源"] = MANUAL_SOURCE
         rows.append(entry)
         return entry, []
 
@@ -52,6 +55,12 @@ class EnergySavingService:
             return None, f"能效报告 {entry_id} 不存在或已归档"
         if action not in ACTION_RULES:
             return None, f"动作「{action}」不属于能效分析可执行范围"
+        if action == "生成报告":
+            try:
+                computed = pipeline.compute_for_plant(str(entry.get("电站编号") or ""))
+            except BaselineError as exc:
+                return None, f"报告生成失败：{exc}"
+            entry.update(computed)
         target = ACTION_RULES[action]
         if target not in STATUS_ORDER:
             return None, f"目标状态「{target}」不在允许的状态序列里"

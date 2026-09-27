@@ -1,11 +1,13 @@
 """能效分析接口：维护能效报告，覆盖生成报告、审阅确认、归档报告等动作。"""
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
 from app.schemas import ActionResult, EntryPayload, PageResult
+from app.services.energy_pipeline import BaselineError, pipeline
 from app.services.energy_saving import EnergySavingService
 
 router = APIRouter(prefix="/api/energy_saving", tags=["能效分析"])
@@ -28,6 +30,30 @@ def list_entries(
         raise HTTPException(status_code=400, detail="每页最多 200 条，请缩小分页范围")
     items, total = service.list_entries(keyword=keyword, status=status, page=page, size=size)
     return PageResult(items=items, total=total, page=page, size=size)
+
+
+@router.get("/export")
+def export_entries() -> dict[str, Any]:
+    """导出能效分析清单：返回当前过滤条件下的全量数据。"""
+    items, total = service.list_entries(page=1, size=10000)
+    return {"module": "energy_saving", "total": total, "items": items}
+
+
+@router.post("/pipeline/run", response_model=ActionResult)
+def run_pipeline() -> ActionResult:
+    """重跑能效流水线：旧结果先整批隔离归档，再从同一份基准数据重算并替换发布。"""
+    try:
+        summary = pipeline.run()
+    except BaselineError as exc:
+        return ActionResult(ok=False, message=f"能效流水线中止：{exc}")
+    return ActionResult(
+        ok=True,
+        message=(
+            f"能效流水线 {summary.batch} 完成：隔离旧结果 {summary.isolated} 条，"
+            f"发布新报告 {summary.generated} 条（分析周期 {summary.period}）"
+        ),
+        entry=asdict(summary),
+    )
 
 
 @router.get("/{entry_id}", response_model=dict)
@@ -56,10 +82,3 @@ def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
     if entry is None:
         return ActionResult(ok=False, message=message)
     return ActionResult(ok=True, message=message, entry=entry)
-
-
-@router.get("/export")
-def export_entries() -> dict[str, Any]:
-    """导出能效分析清单：返回当前过滤条件下的全量数据。"""
-    items, total = service.list_entries(page=1, size=10000)
-    return {"module": "energy_saving", "total": total, "items": items}
